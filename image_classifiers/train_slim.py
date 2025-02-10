@@ -27,12 +27,16 @@ from datasets import build_dataset
 from engine import train_one_epoch, evaluate
 
 import utils
+import models
 
-import models.convnext
-import models.vision_transformer
-import models.swin_transformer
-import models.mlp_mixer
-import models.deit 
+
+# import models
+
+# import models.convnext
+# import models.vision_transformer
+# import models.swin_transformer
+# import models.mlp_mixer
+# import models.deit 
 
 from prune_utils import prune_convnext, prune_deit, prune_vit, check_sparsity 
 
@@ -227,7 +231,6 @@ def get_args_parser():
 
 def main(args):
     utils.init_distributed_mode(args)
-    print(args)
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
@@ -235,6 +238,7 @@ def main(args):
     torch.manual_seed(seed)
     np.random.seed(seed)
     cudnn.benchmark = True
+
 
     dataset_train, args.nb_classes = build_dataset(is_train=True, args=args)
     if args.disable_eval:
@@ -285,61 +289,20 @@ def main(args):
     else:
         data_loader_val = None
 
-    model = utils.build_model(args, pretrained=False)
-    model.cuda()
-    if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=False)
-        model_without_ddp = model.module
 
-    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print('number of params:', n_parameters)
-
-    total_batch_size = args.batch_size * args.update_freq * utils.get_world_size()
-    num_training_steps_per_epoch = len(dataset_train) // total_batch_size
-
-    # At most one of dropout and stochastic depth should be enabled.
-    assert(args.dropout == 0 or args.drop_path == 0)
-    # ConvNeXt does not support dropout.
-    assert(args.dropout == 0 if args.model.startswith("convnext") else True)
-
-
-    if "convnext" in args.model:
-        checkpoint = torch.load(args.resume, map_location='cpu')
-        model.load_state_dict(checkpoint["model"])
-    elif "vit" in args.model:
-        checkpoint = torch.load(args.resume, map_location='cpu')
-        model.load_state_dict(checkpoint)
-    elif "deit" in args.model:
-        checkpoint = torch.load(args.resume, map_location='cpu')
-        model.load_state_dict(checkpoint["model"])
-
-    ################################################################################
-    np.random.seed(0)
-    calibration_ids = np.random.choice(len(dataset_train), args.nsamples)
-    calib_data = []
-    for i in calibration_ids:
-        calib_data.append(dataset_train[i][0].unsqueeze(dim=0))
-    calib_data = torch.cat(calib_data, dim=0).to(device)
-
-    tick = time.time()
-    if args.sparsity != 0:
-        with torch.no_grad():
-            if "convnext" in args.model:
-                prune_convnext(args, model, calib_data, device)
-            elif "vit" in args.model:
-                prune_vit(args, model, calib_data, device)
-            elif "deit" in args.model:
-                prune_vit(args, model, calib_data, device)
-    ################################################################################
-
-    actual_sparsity = check_sparsity(model)
-    print(f"actual sparsity {actual_sparsity}")
-
-    print(f"Eval only mode")
-    test_stats = evaluate(data_loader_val, model, device, use_amp=args.use_amp)
-    val_acc = test_stats["acc1"]
-    print(f"Accuracy of the network on {len(dataset_val)} test images: {test_stats['acc1']:.5f}%")
-    return
+    model = create_model(
+            'deit_small_patch16_224', 
+            pretrained=False, 
+            num_classes=args.nb_classes, 
+            drop_path_rate=args.drop_path,
+            drop_rate =args.dropout,
+            drop_block_rate=None,
+            method='search',
+            head_search=args.head_search,
+            uniform_search=args.uniform_search,
+            )
+    
+    breakpoint()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('ConvNeXt training and evaluation script', parents=[get_args_parser()])

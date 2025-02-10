@@ -27,14 +27,10 @@ from datasets import build_dataset
 from engine import train_one_epoch, evaluate
 
 import utils
-
-import models.convnext
-import models.vision_transformer
-import models.swin_transformer
-import models.mlp_mixer
-import models.deit 
+import models
 
 from prune_utils import prune_convnext, prune_deit, prune_vit, check_sparsity 
+
 
 def str2bool(v):
     """
@@ -223,11 +219,22 @@ def get_args_parser():
     parser.add_argument("--prune_granularity", type=str)
     parser.add_argument("--blocksize", type=int, default=1)
 
+    # vitslimming searching parameters
+    parser.add_argument('--w1', default=0.0001, type=float, help='weightage to attn sparsity')
+    parser.add_argument('--w2', default=0.0001, type=float, help='weightage to mlp sparsity')
+    parser.add_argument('--w3', default=0.0001, type=float, help='weightage to patch sparsity')
+    parser.add_argument('--pretrained_path', default='exps/deit_small/checkpoint.pth', type=str)
+    parser.add_argument('--head_search', action='store_true')
+    parser.add_argument('--uniform_search', action='store_true')
+    parser.add_argument('--freeze_weights', action='store_true')
+
+
     return parser
+
+
 
 def main(args):
     utils.init_distributed_mode(args)
-    print(args)
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
@@ -235,6 +242,7 @@ def main(args):
     torch.manual_seed(seed)
     np.random.seed(seed)
     cudnn.benchmark = True
+
 
     dataset_train, args.nb_classes = build_dataset(is_train=True, args=args)
     if args.disable_eval:
@@ -284,8 +292,19 @@ def main(args):
         )
     else:
         data_loader_val = None
+  
+    model = create_model(
+            'deit_small_patch16_224', 
+            pretrained=False, 
+            num_classes=args.nb_classes, 
+            drop_path_rate=args.drop_path,
+            drop_rate =args.dropout,
+            drop_block_rate=None,
+            method='search',
+            head_search=args.head_search,
+            uniform_search=args.uniform_search,
+            )
 
-    model = utils.build_model(args, pretrained=False)
     model.cuda()
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=False)
@@ -305,13 +324,13 @@ def main(args):
 
     if "convnext" in args.model:
         checkpoint = torch.load(args.resume, map_location='cpu')
-        model.load_state_dict(checkpoint["model"])
+        model.load_state_dict(checkpoint["model"], strict=False)
     elif "vit" in args.model:
         checkpoint = torch.load(args.resume, map_location='cpu')
-        model.load_state_dict(checkpoint)
+        model.load_state_dict(checkpoint, strict=False)
     elif "deit" in args.model:
         checkpoint = torch.load(args.resume, map_location='cpu')
-        model.load_state_dict(checkpoint["model"])
+        model.load_state_dict(checkpoint["model"], strict=False)
 
     ################################################################################
     np.random.seed(0)
@@ -341,8 +360,10 @@ def main(args):
     print(f"Accuracy of the network on {len(dataset_val)} test images: {test_stats['acc1']:.5f}%")
     return
 
+
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser('ConvNeXt training and evaluation script', parents=[get_args_parser()])
+    parser = argparse.ArgumentParser('DeiT searching script', parents=[get_args_parser()])
     args = parser.parse_args()
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
