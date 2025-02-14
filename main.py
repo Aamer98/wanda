@@ -1,5 +1,5 @@
 import argparse
-import os 
+import os
 import json
 from pathlib import Path
 import numpy as np
@@ -22,14 +22,14 @@ print('# of gpus: ', torch.cuda.device_count())
 
 def get_llm(model_name, cache_dir="llm_weights"):
     model = AutoModelForCausalLM.from_pretrained(
-        model_name, 
-        torch_dtype=torch.float16, 
-        cache_dir=cache_dir, 
-        low_cpu_mem_usage=True, 
+        model_name,
+        torch_dtype=torch.float16,
+        cache_dir=cache_dir,
+        low_cpu_mem_usage=True,
         device_map="auto"
     )
 
-    model.seqlen = model.config.max_position_embeddings 
+    model.seqlen = model.config.max_position_embeddings
     return model
 
 def main():
@@ -39,7 +39,7 @@ def main():
     parser.add_argument('--nsamples', type=int, default=128, help='Number of calibration samples.')
     parser.add_argument('--sparsity_ratio', type=float, default=0, help='Sparsity level')
     parser.add_argument("--sparsity_type", type=str, choices=["unstructured", "4:8", "2:4"])
-    parser.add_argument("--prune_method", type=str, choices=["magnitude", "random", "wanda", "sparsegpt", 
+    parser.add_argument("--prune_method", type=str, choices=["magnitude", "random", "wanda", "sparsegpt",
                         "ablate_mag_seq", "ablate_wanda_seq", "ablate_mag_iter", "ablate_wanda_iter", "search"])
     parser.add_argument("--cache_dir", default="llm_weights", type=str )
     parser.add_argument('--use_variant', action="store_true", help="whether to use the wanda variant described in the appendix")
@@ -75,7 +75,7 @@ def main():
         )
         model_args.slimming = args.slimming
         model = Transformer(model_args)
-        
+
         checkpoints = sorted(Path(ckpt_dir).glob("*.pth"))
         breakpoint()
         ckpt_path = checkpoints[get_model_parallel_rank()]
