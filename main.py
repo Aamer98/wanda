@@ -77,7 +77,6 @@ def main():
         model = Transformer(model_args)
 
         checkpoints = sorted(Path(ckpt_dir).glob("*.pth"))
-        breakpoint()
         ckpt_path = checkpoints[get_model_parallel_rank()]
         checkpoint = torch.load(ckpt_path, map_location="cpu")
         model.load_state_dict(checkpoint, strict=False)

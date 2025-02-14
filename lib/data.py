@@ -48,6 +48,7 @@ def get_c4(nsamples, seed, seqlen, tokenizer):
     # Generate samples from training set
     random.seed(seed)
     trainloader = []
+
     for _ in range(nsamples):
         while True:
             i = random.randint(0, len(traindata) - 1)

@@ -59,6 +59,7 @@ def prepare_calibration_input(model, dataloader, device):
 
     use_cache = model.config.use_cache
     model.config.use_cache = False
+    model.config.output_attentions = True
     layers = model.model.layers
 
     # dev = model.hf_device_map["model.embed_tokens"]
@@ -69,7 +70,8 @@ def prepare_calibration_input(model, dataloader, device):
     # shape: (128, 4096, 4096)
     inps = torch.zeros((128, model.seqlen, model.config.hidden_size), dtype=dtype, device=device)
     inps.requires_grad = False
-    cache = {'i': 0, 'attention_mask': None, "position_ids": None}
+    # cache = {'i': 0, 'attention_mask': None, "position_ids": None}
+    cache = {'i': 0, 'attention_mask': None, "position_embeddings": None}
 
     class Catcher(nn.Module):
         def __init__(self, module):
@@ -79,7 +81,8 @@ def prepare_calibration_input(model, dataloader, device):
             inps[cache['i']] = inp
             cache['i'] += 1
             cache['attention_mask'] = kwargs['attention_mask']
-            cache['position_ids'] = kwargs['position_ids']
+            # cache['position_ids'] = kwargs['position_ids']
+            cache['position_embeddings'] = kwargs['position_embeddings']
             raise ValueError
     layers[0] = Catcher(layers[0])
     
@@ -93,10 +96,11 @@ def prepare_calibration_input(model, dataloader, device):
 
     outs = torch.zeros_like(inps)
     attention_mask = cache['attention_mask']
-    position_ids = cache['position_ids']
+    # position_ids = cache['position_ids']
+    position_embeddings = cache['position_embeddings']
     model.config.use_cache = use_cache
 
-    return inps, outs, attention_mask, position_ids 
+    return inps, outs, attention_mask, position_embeddings 
 
 def return_given_alpha(alpha, sort_res, W_metric, tmp_metric, sum_before):
     thres_cumsum = sum_before * alpha 
@@ -179,7 +183,8 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
     # attention_mask: (1, 1, sequence_length, sequence_length)
     # position_ids: (1, sequence_length)
     with torch.no_grad():
-        inps, outs, attention_mask, position_ids = prepare_calibration_input(model, dataloader, device)
+        # inps, outs, attention_mask, position_ids = prepare_calibration_input(model, dataloader, device)
+        inps, outs, attention_mask, position_embeddings = prepare_calibration_input(model, dataloader, device)
 
     # Get all transformer layers from the model.
     layers = model.model.layers
@@ -194,7 +199,11 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
         # to the device that the current layer is mapped to.
         if f"model.layers.{i}" in model.hf_device_map:
             dev = model.hf_device_map[f"model.layers.{i}"]
-            inps, outs, attention_mask, position_ids = inps.to(dev), outs.to(dev), attention_mask.to(dev), position_ids.to(dev)
+            # inps, outs, attention_mask, position_ids = inps.to(dev), outs.to(dev), attention_mask.to(dev), position_ids.to(dev)
+            inps, outs, attention_mask = inps.to(dev), outs.to(dev), attention_mask.to(dev)
+            cos, sin = position_embeddings
+            cos, sin = cos.to(dev), sin.to(dev)
+            position_embeddings = (cos, sin)
 
         # Create a dictionary to hold WrappedGPT instances for each target submodule.
         # Each WrappedGPT instance collects activation statistics during forward passes.
@@ -220,8 +229,10 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
         for j in range(args.nsamples):
             with torch.no_grad():
                 # Unsqueeze the input to add a batch dimension and process it through the current layer.
+                # outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask,
+                #                  position_ids=position_ids)[0]
                 outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask,
-                                 position_ids=position_ids)[0]
+                                 position_embeddings=position_embeddings)[0]
         
         # Remove the forward hooks after the statistics have been collected.
         for h in handles:
@@ -289,8 +300,10 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
         # This updates the activations so they can serve as inputs for the next layer.
         for j in range(args.nsamples):
             with torch.no_grad():
+                # outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask,
+                #                  position_ids=position_ids)[0]
                 outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask,
-                                 position_ids=position_ids)[0]
+                                 position_embeddings=position_embeddings)[0]                
         # Swap inps and outs: the output of this layer becomes the input for the next layer.
         inps, outs = outs, inps
 
