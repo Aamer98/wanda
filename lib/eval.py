@@ -4,11 +4,13 @@ import torch
 import torch.nn as nn
 
 # Import get_loaders function from data module within the same directory
-from .data import get_loaders 
+from .data import get_loaders
 
 from collections import defaultdict
 import fnmatch
 
+
+from fvcore.nn import FlopCountAnalysis
 
 # Function to evaluate perplexity (ppl) on a specified model and tokenizer
 def eval_ppl(args, model, tokenizer, device=torch.device("cuda:0")):
@@ -20,13 +22,13 @@ def eval_ppl(args, model, tokenizer, device=torch.device("cuda:0")):
 
     # Get the test loader
     _, testloader = get_loaders(
-        dataset, seed=0, seqlen=model.seqlen, tokenizer=tokenizer 
+        dataset, seed=0, seqlen=model.seqlen, tokenizer=tokenizer
     )
 
     # Evaluate ppl in no grad context to avoid updating the model
     with torch.no_grad():
         ppl_test = eval_ppl_wikitext(model, testloader, 1, device)
-    return ppl_test 
+    return ppl_test
 
 # Function to evaluate perplexity (ppl) specifically on the wikitext dataset
 def eval_ppl_wikitext_train(model, trainloader, bs=1, device=None):
@@ -102,7 +104,6 @@ def eval_ppl_wikitext(model, testenc, bs=1, device=None):
         # Prepare inputs and move to device
         inputs = testenc[:,(i * model.seqlen):(j * model.seqlen)].to(device)
         inputs = inputs.reshape(j-i, model.seqlen)
-
         # Forward pass through the model
         lm_logits = model(inputs).logits
 
@@ -129,9 +130,9 @@ def eval_ppl_wikitext(model, testenc, bs=1, device=None):
     return ppl.item()
 
 
-def eval_zero_shot(model_name, model, tokenizer, task_list=["boolq","rte","hellaswag","winogrande","arc_challenge","arc_easy","openbookqa"], 
+def eval_zero_shot(model_name, model, tokenizer, task_list=["boolq","rte","hellaswag","winogrande","arc_challenge","arc_easy","openbookqa"],
         num_fewshot=0, use_accelerate=False, add_special_tokens=False):
-    from lm_eval import tasks, evaluator 
+    from lm_eval import tasks, evaluator
     def pattern_match(patterns, source_list):
         task_names = set()
         for pattern in patterns:
@@ -140,7 +141,7 @@ def eval_zero_shot(model_name, model, tokenizer, task_list=["boolq","rte","hella
         return list(task_names)
     task_names = pattern_match(task_list, tasks.ALL_TASKS)
     model_args = f"pretrained={model_name},cache_dir=./llm_weights"
-    limit = None 
+    limit = None
     if "70b" in model_name or "65b" in model_name:
         limit = 2000
     if use_accelerate:
@@ -158,8 +159,8 @@ def eval_zero_shot(model_name, model, tokenizer, task_list=["boolq","rte","hella
         decontamination_ngrams_path=None,
         check_integrity=False,
         pretrained_model=model,
-        tokenizer=tokenizer, 
+        tokenizer=tokenizer,
         add_special_tokens=add_special_tokens
     )
 
-    return results 
+    return results

@@ -12,7 +12,8 @@ from lib.eval import eval_ppl, eval_zero_shot
 
 from llama import Llama
 from llama.model import ModelArgs, Transformer
-from fairscale.nn.model_parallel.initialize import get_model_parallel_rank
+from calflops import calculate_flops
+
 
 
 print('torch', version('torch'))
@@ -116,6 +117,15 @@ def main():
     with open(save_filepath, "w") as f:
         print("method\tactual_sparsity\tppl_test", file=f, flush=True)
         print(f"{args.prune_method}\t{sparsity_ratio:.4f}\t{ppl_test:.4f}", file=f, flush=True)
+
+
+    # Compute FLOPs
+    flops, macs, params = calculate_flops(model=model.to(device),
+                                      input_shape=(1,512),
+                                      transformer_tokenizer=tokenizer)
+
+    print("Model: %s Method: %s FLOPs:%s   MACs:%s   Params:%s \n" %(args.model, args.prune_method, flops, macs, params))
+
 
     if args.eval_zero_shot:
         accelerate=False
