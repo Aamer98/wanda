@@ -4,3 +4,6 @@
 *.pyc
 *.DS_Store
 llm_weights/
+weights/
+lora_ft/wandb
+lora_ft/llm_weights
