@@ -57,7 +57,8 @@ from peft import (
     LoraConfig,
     get_peft_model,
     get_peft_model_state_dict,
-    prepare_model_for_int8_training,
+    # prepare_model_for_int8_training,
+    prepare_model_for_kbit_training,
     set_peft_model_state_dict,
 )
 
@@ -282,6 +283,11 @@ def main():
     transformers.utils.logging.enable_default_handler()
     transformers.utils.logging.enable_explicit_format()
 
+    training_args.output_dir = os.path.join(training_args.output_dir, model_args.model_name_or_path.split('/')[-1])
+    if not os.path.exists(training_args.output_dir):
+        os.makedirs(training_args.output_dir)
+
+
     # Log on each process the small summary:
     logger.warning(
         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
@@ -317,8 +323,11 @@ def main():
     # In distributed training, the load_dataset function guarantee that only one local process can concurrently
     # download the dataset.
     raw_datasets = load_dataset(
-        'allenai/c4', 'allenai--c4', data_files={'train': 'en/c4-train.00000-of-01024.json.gz', 'validation': 'en/c4-validation.00000-of-00008.json.gz'}
+        'allenai/c4', data_files={'train': 'en/c4-train.00000-of-01024.json.gz', 'validation': 'en/c4-validation.00000-of-00008.json.gz'}
     )
+    # traindata = load_dataset('allenai/c4', data_files={'train': 'en/c4-train.00000-of-01024.json.gz'}, split='train')
+    # valdata = load_dataset('allenai/c4', data_files={'validation': 'en/c4-validation.00000-of-00008.json.gz'}, split='validation')
+
 
     if "validation" not in raw_datasets.keys():
         raw_datasets["validation"] = load_dataset(
@@ -358,21 +367,21 @@ def main():
         "revision": model_args.model_revision,
         "use_auth_token": True if model_args.use_auth_token else None,
     }
-    # tokenizer = AutoTokenizer.from_pretrained(model_args.config_name, use_fast=False)
+    tokenizer = AutoTokenizer.from_pretrained(model_args.config_name, use_fast=False)
 
-    ## we use the tokenizer from vicuna
-    if "decapoda-research" in model_args.config_name:
-        tokenizer = AutoTokenizer.from_pretrained(
-            "lmsys/vicuna-13b-delta-v0",
-            cache_dir=model_args.cache_dir,
-            padding_side="right",
-            use_fast=True,
-        )
+    # ## we use the tokenizer from vicuna
+    # if "decapoda-research" in model_args.config_name:
+    #     tokenizer = AutoTokenizer.from_pretrained(
+    #         "lmsys/vicuna-13b-delta-v0",
+    #         cache_dir=model_args.cache_dir,
+    #         padding_side="right",
+    #         use_fast=True,
+    #     )
 
     model = AutoModelForCausalLM.from_pretrained(model_args.model_name_or_path, torch_dtype=torch.float16, cache_dir=model_args.cache_dir, low_cpu_mem_usage=True, device_map="auto")
 
     ############################################################################################
-    model = prepare_model_for_int8_training(model)
+    model = prepare_model_for_kbit_training(model)
     config = LoraConfig(
         r=model_args.lora_r,
         lora_alpha=model_args.lora_alpha,

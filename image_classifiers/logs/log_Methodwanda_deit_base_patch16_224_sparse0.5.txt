@@ -1,0 +1,2 @@
+method	actual_sparsity	acc_test	FLOPs	MACs
+wanda	0.5000	78.4120	33.72 GFLOPS	16.85 GMACs

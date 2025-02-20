@@ -21,16 +21,19 @@ print('transformers', version('transformers'))
 print('accelerate', version('accelerate'))
 print('# of gpus: ', torch.cuda.device_count())
 
+llama_seqlen = 2048
+
 def get_llm(model_name, cache_dir="llm_weights"):
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=torch.float16,
-        cache_dir=cache_dir,
-        low_cpu_mem_usage=True,
+        # torch_dtype=torch.float16,
+        torch_dtype="auto",
+        # cache_dir=cache_dir,
+        # low_cpu_mem_usage=True,
         device_map="auto"
     )
 
-    model.seqlen = model.config.max_position_embeddings
+    model.seqlen = min(llama_seqlen, model.config.max_position_embeddings)
     return model
 
 def main():
@@ -45,7 +48,7 @@ def main():
     parser.add_argument("--cache_dir", default="llm_weights", type=str )
     parser.add_argument('--use_variant', action="store_true", help="whether to use the wanda variant described in the appendix")
     parser.add_argument('--save', type=str, default=None, help='Path to save results.')
-    parser.add_argument('--save_model', type=str, default=None, help='Path to save the pruned model.')
+    parser.add_argument('--save_model', type=str, default="/home/aamer/repos/wanda/weights/llm/pruned", help='Path to save the pruned model.')
 
     parser.add_argument("--eval_zero_shot", action="store_true")
 
@@ -84,7 +87,7 @@ def main():
     else:
         model = get_llm(args.model, args.cache_dir)
     model.eval()
-    tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False)
+    tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False, truncation=True, max_length=model.seqlen)
 
     device = torch.device("cuda:0")
     if "30b" in args.model or "65b" in args.model: # for 30b and 65b we use device_map to load onto multiple A6000 GPUs, thus the processing here.
@@ -111,20 +114,23 @@ def main():
     ppl_test = eval_ppl(args, model, tokenizer, device)
     print(f"wikitext perplexity {ppl_test}")
 
-    if not os.path.exists(args.save):
-        os.makedirs(args.save)
-    save_filepath = os.path.join(args.save, f"log_{args.prune_method}.txt")
-    with open(save_filepath, "w") as f:
-        print("method\tactual_sparsity\tppl_test", file=f, flush=True)
-        print(f"{args.prune_method}\t{sparsity_ratio:.4f}\t{ppl_test:.4f}", file=f, flush=True)
-
-
     # Compute FLOPs
     flops, macs, params = calculate_flops(model=model.to(device),
                                       input_shape=(1,512),
                                       transformer_tokenizer=tokenizer)
 
-    print("Model: %s Method: %s FLOPs:%s   MACs:%s   Params:%s \n" %(args.model, args.prune_method, flops, macs, params))
+
+    if not os.path.exists(args.save):
+        os.makedirs(args.save)
+    save_filepath = os.path.join(args.save, f"log_Method{args.prune_method}_{args.model.split('/')[-1]}_sparse{args.sparsity_ratio}.txt")
+    with open(save_filepath, "w") as f:
+        print("method\tactual_sparsity\tppl_test\tFLOPs\tMACs", file=f, flush=True)
+        print(f"{args.prune_method}\t{sparsity_ratio:.4f}\t{ppl_test:.4f}\t{flops}\t{macs}", file=f, flush=True)
+
+
+
+
+    # print("Model: %s Method: %s FLOPs:%s   MACs:%s   Params:%s \n" %(args.model, args.prune_method, flops, macs, params))
 
 
     if args.eval_zero_shot:
@@ -140,8 +146,12 @@ def main():
         print(results)
 
     if args.save_model:
-        model.save_pretrained(args.save_model)
-        tokenizer.save_pretrained(args.save_model)
+        model_save_path = os.path.join(args.save_model, f"{args.prune_method}_{args.model.split('/')[-1]}_sparse{args.sparsity_ratio}")
+        if not os.path.exists(model_save_path):
+            os.makedirs(model_save_path)
+
+        model.save_pretrained(model_save_path)
+        tokenizer.save_pretrained(model_save_path)
 
 if __name__ == '__main__':
     main()

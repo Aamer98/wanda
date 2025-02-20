@@ -95,7 +95,7 @@ def evaluate_ppl(dataset_name, model, tokenizer, ctx_length):
     ppl = torch.exp(torch.stack(nlls).mean())
     return ppl.item() 
 
-def eval_llm(model, tokenizer, task_list=["boolq","piqa","hellaswag","winogrande","arc_challenge","arc_easy","openbookqa"], num_fewshot=0):
+def eval_llm(model, config_name, tokenizer, task_list=["boolq","piqa","hellaswag","winogrande","arc_challenge","arc_easy","openbookqa"], num_fewshot=0):
     from lm_eval import tasks, evaluator
     def pattern_match(patterns, source_list):
         task_names = set()
@@ -106,7 +106,7 @@ def eval_llm(model, tokenizer, task_list=["boolq","piqa","hellaswag","winogrande
     task_names = pattern_match(task_list, tasks.ALL_TASKS)
     results = evaluator.simple_evaluate(
         model="hf-causal-experimental",
-        model_args="pretrained=decapoda-research/llama-7b-hf",
+        model_args=f"pretrained={config_name}",
         tasks=task_names,
         num_fewshot=num_fewshot,
         batch_size=None, 
@@ -126,12 +126,15 @@ def eval_llm(model, tokenizer, task_list=["boolq","piqa","hellaswag","winogrande
 def main(args):
     model = AutoModelForCausalLM.from_pretrained(
                 args.model,
-                torch_dtype=torch.float16, cache_dir=args.cache_dir, low_cpu_mem_usage=True, device_map="auto")
+                torch_dtype="auto", device_map="auto")
+                # torch_dtype=torch.float16, cache_dir=args.cache_dir, low_cpu_mem_usage=True, device_map="auto")
+
     tokenizer = AutoTokenizer.from_pretrained(
-        "lmsys/vicuna-13b-delta-v0",
+        args.config_name,
         cache_dir=args.cache_dir,
         padding_side="right",
         use_fast=True,
+        truncation=True,
     )
 
     model = PeftModel.from_pretrained(model,args.lora_weights,torch_dtype=torch.float16)
@@ -146,7 +149,7 @@ def main(args):
         accelerate=False 
         for num_shot in [0]:
             task_list = task_list_dict[num_shot]
-            results = eval_llm(model, tokenizer, task_list, num_shot)
+            results = eval_llm(model, args.config_name, tokenizer, task_list, num_shot)
 
 if __name__ == "__main__":
     import argparse
@@ -155,6 +158,9 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--model', type=str
+    )
+    parser.add_argument(
+        '--config_name', type=str, default="Qwen/Qwen2.5-0.5B"
     )
     parser.add_argument(
         '--cache_dir', type=str, default="llm_weights"  

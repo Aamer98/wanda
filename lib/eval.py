@@ -12,6 +12,10 @@ import fnmatch
 
 from fvcore.nn import FlopCountAnalysis
 
+# llama2
+llama_seqlen = 2048 # code takes too long to run otherwise
+
+
 # Function to evaluate perplexity (ppl) on a specified model and tokenizer
 def eval_ppl(args, model, tokenizer, device=torch.device("cuda:0")):
     # Set dataset

@@ -36,6 +36,9 @@ import models.deit
 
 from prune_utils import prune_convnext, prune_deit, prune_vit, check_sparsity 
 
+from calflops import calculate_flops
+
+
 def str2bool(v):
     """
     Converts string to bool type; enables command line 
@@ -223,6 +226,10 @@ def get_args_parser():
     parser.add_argument("--prune_granularity", type=str)
     parser.add_argument("--blocksize", type=int, default=1)
 
+    parser.add_argument("--save", type=str, default="/home/aamer/repos/wanda/image_classifiers/logs")
+
+    parser.add_argument('--save_model', type=str, default="/home/aamer/repos/wanda/weights/vision/pruned", help='Path to save the pruned model.')
+
     return parser
 
 def main(args):
@@ -285,7 +292,7 @@ def main(args):
     else:
         data_loader_val = None
 
-    model = utils.build_model(args, pretrained=False)
+    model = utils.build_model(args, pretrained=True)
     model.cuda()
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=False)
@@ -303,15 +310,15 @@ def main(args):
     assert(args.dropout == 0 if args.model.startswith("convnext") else True)
 
 
-    if "convnext" in args.model:
-        checkpoint = torch.load(args.resume, map_location='cpu')
-        model.load_state_dict(checkpoint["model"])
-    elif "vit" in args.model:
-        checkpoint = torch.load(args.resume, map_location='cpu')
-        model.load_state_dict(checkpoint)
-    elif "deit" in args.model:
-        checkpoint = torch.load(args.resume, map_location='cpu')
-        model.load_state_dict(checkpoint["model"])
+    # if "convnext" in args.model:
+    #     checkpoint = torch.load(args.resume, map_location='cpu')
+    #     model.load_state_dict(checkpoint["model"])
+    # elif "vit" in args.model:
+    #     checkpoint = torch.load(args.resume, map_location='cpu')
+    #     model.load_state_dict(checkpoint)
+    # elif "deit" in args.model:
+    #     checkpoint = torch.load(args.resume, map_location='cpu')
+    #     model.load_state_dict(checkpoint["model"])
 
     ################################################################################
     np.random.seed(0)
@@ -339,6 +346,30 @@ def main(args):
     test_stats = evaluate(data_loader_val, model, device, use_amp=args.use_amp)
     val_acc = test_stats["acc1"]
     print(f"Accuracy of the network on {len(dataset_val)} test images: {test_stats['acc1']:.5f}%")
+
+
+
+    batch_size = 1
+    input_shape = (batch_size, 3, 224, 224)
+    flops, macs, params = calculate_flops(model=model, 
+                                        input_shape=input_shape,
+                                        output_as_string=True)
+    print("FLOPs:%s   MACs:%s   Params:%s \n" %(flops, macs, params))
+
+
+    if not os.path.exists(args.save):
+        os.makedirs(args.save)
+    save_filepath = os.path.join(args.save, f"log_Method{args.prune_metric}_{args.model}_sparse{args.sparsity}.txt")
+    with open(save_filepath, "w") as f:
+        print("method\tactual_sparsity\tacc_test\tFLOPs\tMACs", file=f, flush=True)
+        print(f"{args.prune_metric}\t{args.sparsity:.4f}\t{test_stats['acc1']:.4f}\t{flops}\t{macs}", file=f, flush=True)    
+
+    
+    if args.save_model:
+        model_save_path = os.path.join(args.save_model, f"{args.prune_metric}_{args.model}_sparse{args.sparsity}.pt")
+        torch.save(model.state_dict(), f=model_save_path)
+
+    
     return
 
 if __name__ == '__main__':

@@ -1,0 +1,2 @@
+method	actual_sparsity	acc_test	FLOPs	MACs
+magnitude	0.5000	71.1080	8.5 GFLOPS	4.24 GMACs

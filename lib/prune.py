@@ -8,6 +8,10 @@ from .data import get_loaders
 
 from .ablate import AblateGPT 
 
+# llama2
+llama_seqlen = 2048 # code takes too long to run otherwise
+
+
 def find_layers(module, layers=[nn.Linear], name=''):
     """
     Recursively find the layers of a certain type in a module.
@@ -331,7 +335,9 @@ def prune_sparsegpt(args, model, tokenizer, dev, prune_n=0, prune_m=0):
     inps = torch.zeros(
         (args.nsamples, model.seqlen, model.config.hidden_size), dtype=dtype, device=dev
     )
-    cache = {'i': 0, 'attention_mask': None, "position_ids": None}
+    # cache = {'i': 0, 'attention_mask': None, "position_ids": None}
+    cache = {'i': 0, 'attention_mask': None, "position_embeddings": None}
+
 
     class Catcher(nn.Module):
         def __init__(self, module):
@@ -341,7 +347,8 @@ def prune_sparsegpt(args, model, tokenizer, dev, prune_n=0, prune_m=0):
             inps[cache['i']] = inp
             cache['i'] += 1
             cache['attention_mask'] = kwargs['attention_mask']
-            cache['position_ids'] = kwargs['position_ids']
+            # cache['position_ids'] = kwargs['position_ids']
+            cache['position_embeddings'] = kwargs['position_embeddings']
             raise ValueError
     layers[0] = Catcher(layers[0])
     for batch in dataloader:
@@ -354,7 +361,8 @@ def prune_sparsegpt(args, model, tokenizer, dev, prune_n=0, prune_m=0):
 
     outs = torch.zeros_like(inps)
     attention_mask = cache['attention_mask']
-    position_ids = cache['position_ids']
+    # position_ids = cache['position_ids']
+    position_embeddings = cache['position_embeddings']
 
     print('Ready.')
 

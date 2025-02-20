@@ -538,7 +538,7 @@ def reg_scheduler(base_value, final_value, epochs, niter_per_ep, early_epochs=0,
     assert len(schedule) == epochs * niter_per_ep
     return schedule
 
-def build_model(args, pretrained=False):
+def build_model(args, pretrained=True):
     if args.model.startswith("convnext"):
         model = create_model(
             args.model,

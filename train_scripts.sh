@@ -4,6 +4,10 @@ python vitslim.py --model deit_small_patch16_224 --data_path /home/as26840@ens.a
 
 
 
-TORCH_VISIBLE_DEVICES=2 python main.py --model meta-llama/Llama-2-7b-hf --prune_method wanda --sparsity_ratio 0.5 --sparsity_type unstructured --save /ephemeral/amin/aamer/logs/wanda
+CUDA_VISIBLE_DEVICES=4 python main.py --model meta-llama/Llama-2-7b-hf --prune_method wanda --sparsity_ratio 0.5 --sparsity_type unstructured --save /home/aamer/repos/logs/wanda
 
 TinyLlama/TinyLlama-1.1B-Chat-v1.0
+
+Qwen/Qwen2.5-1.5B
+meta-llama/Llama-2-7b-hf
+meta-llama/Llama-3.2-1B
