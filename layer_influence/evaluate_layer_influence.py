@@ -272,7 +272,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='LLM Layer Influence Evaluator')
     parser.add_argument('-d', '--dataset', default='wikitext-2', choices=supported_datasets)
     parser.add_argument('-m', '--model_name', default='llama-2', choices=['llama-2', 'mistral', 'qwen2'])
-    parser.add_argument('-s', '--model_size', default='7b', choices=['7b', '3b'])
+    parser.add_argument('-s', '--model_size', default='7b', choices=['7b', '3b', '1.5b', '0.5b'])
     parser.add_argument('--use_instruct_model', action='store_true', default=False)
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--test_batch_size', type=int, default=None)
