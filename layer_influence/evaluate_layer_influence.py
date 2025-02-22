@@ -207,6 +207,18 @@ def main(args):
 
         layer_influence_list = [("cosine", cosine_layer_influences)]
 
+
+    # Layer pruning according to layer importance
+    layer_importances = [(cosine_distance, idx) for idx, cosine_distance in enumerate(cosine_layer_influences)]
+    layer_importances.sort(key=lambda x: x[0], reverse=True)
+    layers_to_keep = layer_importances[:int(total_layers * (1 - args.sparsity_ratio))]
+    layers_to_keep = [idx for _, idx in layers_to_keep]
+    layers_to_prune = layer_importances[int(total_layers * (1 - args.sparsity_ratio)):]
+    layers_to_prune = [idx for _, idx in layers_to_prune]
+    print(f"Layers to keep: {layers_to_keep}")
+
+    model.select_layers(layers_to_keep)  # use the selected layers
+
     # Compute FLOPs
     flops, macs, params = calculate_flops(model=model.to(device), input_shape=(1, 512), transformer_tokenizer=tokenizer)
 
