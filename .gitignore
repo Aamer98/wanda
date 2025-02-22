@@ -10,3 +10,4 @@ lora_ft/llm_weights/
 image_classifiers/logs/
 datasets/
 weights/
+wandb/
