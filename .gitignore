@@ -1,11 +1,12 @@
 /*__pycache__/
-/home/as26840@ens.ad.etsmtl.ca/repos/wanda/logs
+logs/
 .env
 *.pyc
 *.DS_Store
 llm_weights/
 weights/
-lora_ft/wandb
-lora_ft/llm_weights
-image_classifiers/logs
-/home/aamer/repos/wanda/datasets
+lora_ft/wandb/
+lora_ft/llm_weights/
+image_classifiers/logs/
+datasets/
+weights/
