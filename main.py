@@ -119,7 +119,6 @@ def main():
                                       input_shape=(1,512),
                                       transformer_tokenizer=tokenizer)
 
-
     if not os.path.exists(args.save):
         os.makedirs(args.save)
     save_filepath = os.path.join(args.save, f"log_Method{args.prune_method}_{args.model.split('/')[-1]}_sparse{args.sparsity_ratio}.txt")
