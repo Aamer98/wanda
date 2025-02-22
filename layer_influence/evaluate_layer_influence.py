@@ -24,8 +24,9 @@ from dataset import NLPDataset, get_dataloader
 from train_utils import get_num_model_params
 from dist_utils import init_distributed_env, is_main_proc, wait_for_other_procs, reduce_tensor
 from block_influence import BlockInfluenceEstimator
-from evals.dist_mmlu import MMLUDataset
+from evals.dist_mmlu import MMLUDataset, evaluate_mmlu
 from utils import layer_importance_plot
+from lib.eval import eval_ppl, eval_zero_shot
 from calflops import calculate_flops
 
 
@@ -219,11 +220,21 @@ def main(args):
 
     model.select_layers(layers_to_keep)  # use the selected layers
 
+
+    # Wikitext perplexity evaluation
+    wikitext_perplexity = eval_ppl(args, model, tokenizer, device)
+    print(f"wikitext perplexity {wikitext_perplexity}")
+
+
+    # MMLU Eval
+    _, _, weighted_acc = evaluate_mmlu(model, tokenizer, mmlu_loader, device, f"cosine_influence_sparsity_{args.sparsity_ratio}")
+    _, avg_perplexity = evaluate_model(model, eval_loader, device, f"cosine_influence_sparsity_{args.sparsity_ratio}")
+
     # Compute FLOPs
     flops, macs, params = calculate_flops(model=model.to(device), input_shape=(1, 512), transformer_tokenizer=tokenizer)
 
     # Save results
-    save_path = os.path.join(args.save_path, f'{args.pruning_scheme}_{args.model_name}_sparse{args.sparsity_ratio}_samplesize{args.subsample_size}')
+    save_path = os.path.join(args.save_path, f'{args.pruning_scheme}_{args.model_name}{args.model_size}_sparse{args.sparsity_ratio}_{args.dataset}_samplesize{args.subsample_size}')
     os.makedirs(save_path, exist_ok=True)
 
     with open(os.path.join(save_path, 'layer_importance.csv'), 'w', newline='') as csvfile:
@@ -234,8 +245,10 @@ def main(args):
 
     # Save evaluation results
     with open(os.path.join(save_path, "test_results.txt"), "w") as f:
-        print("method\tactual_sparsity\tFLOPs\tMACs", file=f)
-        print(f"{args.pruning_scheme}\t{args.sparsity_ratio:.4f}\t{flops}\t{macs}", file=f)
+        print(f"method\tactual_sparsity\twiki_perplexity\t{args.dataset}_ppl\tMMLU_acc\tFLOPs\tMACs", file=f)
+        print(f"{args.pruning_scheme}\t{args.sparsity_ratio:.4f}\t{wikitext_perplexity:.4f}\t{avg_perplexity}\t{weighted_acc}\t{flops}\t{macs}", file=f)
+        print(f"Layers to keep: {layers_to_keep}")
+        print(f"Layers to remove: {layers_to_prune}")
 
     # Plot and save the layer importance
     layer_indexes = []
@@ -258,8 +271,8 @@ if __name__ == "__main__":
     # Argument parser setup
     parser = argparse.ArgumentParser(description='LLM Layer Influence Evaluator')
     parser.add_argument('-d', '--dataset', default='wikitext-2', choices=supported_datasets)
-    parser.add_argument('-m', '--model-name', default='llama-2', choices=['llama-2', 'mistral', 'qwen2'])
-    parser.add_argument('-s', '--model-size', default='7b', choices=['7b', '3b'])
+    parser.add_argument('-m', '--model_name', default='llama-2', choices=['llama-2', 'mistral', 'qwen2'])
+    parser.add_argument('-s', '--model_size', default='7b', choices=['7b', '3b'])
     parser.add_argument('--use-instruct-model', action='store_true', default=False)
     parser.add_argument('--batch-size', type=int, default=1)
     parser.add_argument('--test-batch-size', type=int, default=None)
