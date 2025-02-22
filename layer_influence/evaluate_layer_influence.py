@@ -68,6 +68,8 @@ def load_model(args, only_tokenizer=False, pretrained=False):
     else:
         raise RuntimeError(f"Unsupported model: {args.model_name}")
 
+    model.seqlen = min(2048, model.config.max_position_embeddings)
+    
     return model, tokenizer
 
 
