@@ -1,0 +1,3 @@
+CUDA_VISIBLE_DEVICES=7 python layer_influence/evaluate_layer_influence.py --dataset "openwebtext" --model-name "llama-2" --model-size 7b --batch-size 1 --sequence-length 2048 --subsample-size 200 --pruning-scheme "both" --wandb-project 'layer_influence'
+
+CUDA_VISIBLE_DEVICES=7 python layer_influence/evaluate_layer_influence.py --dataset "openwebtext" --model-name "qwen2" --model-size 3b --batch-size 1 --sequence-length 2048 --subsample-size 200 --pruning-scheme "both" --wandb-project 'layer_influence'
