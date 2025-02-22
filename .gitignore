@@ -7,3 +7,5 @@ llm_weights/
 weights/
 lora_ft/wandb
 lora_ft/llm_weights
+image_classifiers/logs
+/home/aamer/repos/wanda/datasets
