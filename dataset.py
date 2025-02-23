@@ -39,23 +39,23 @@ class NLPDataset(torch.utils.data.Dataset):
 
         subsample_dataset = True  # Subsample in this case due to large dataset size
         if dataset_name == "pg19":
-            dataset = load_dataset("pg19")
+            dataset = load_dataset("pg19", trust_remote_code=True)
             subsample_dataset = False  # dataset small enough
         elif dataset_name == "c4":
             # Load the en-noblocklist subset of C4 (https://huggingface.co/datasets/c4)
-            dataset = load_dataset("c4", "en.noblocklist")
+            dataset = load_dataset("c4", "en.noblocklist", trust_remote_code=True)
         elif dataset_name == "openwebtext":
-            dataset = load_dataset("openwebtext")
+            dataset = load_dataset("openwebtext", trust_remote_code=True)
         elif dataset_name == "slimpajama":
-            dataset = load_dataset("cerebras/SlimPajama-627B")
+            dataset = load_dataset("cerebras/SlimPajama-627B", trust_remote_code=True)
         elif dataset_name == "cc_news":
-            dataset = load_dataset("cc_news")
+            dataset = load_dataset("cc_news", trust_remote_code=True)
             subsample_dataset = False  # dataset small enough
         elif dataset_name == "bookcorpus":
-            dataset = load_dataset("bookcorpus")
+            dataset = load_dataset("bookcorpus", trust_remote_code=True)
         else:
             assert dataset_name == "wikitext-2"
-            dataset = load_dataset("wikitext", "wikitext-2-raw-v1")
+            dataset = load_dataset("wikitext", "wikitext-2-raw-v1", trust_remote_code=True)
             subsample_dataset = False  # dataset small enough
 
         # Create a test split in case the original test split is not provided

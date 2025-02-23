@@ -211,7 +211,7 @@ def main(args):
             for i, influence in enumerate(cosine_layer_influences):
                 wandb.log({f"layer_{i}_cosine_influence": influence})
 
-        layer_influence_list = [("cosine", cosine_layer_influences)]
+        # layer_influence_list = [("cosine", cosine_layer_influences)]
 
 
     print("Using layer influence method: cosine distance")
