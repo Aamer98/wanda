@@ -827,6 +827,10 @@ class LlamaModel(LlamaPreTrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
 
+        # New args for block selection
+        self.selected_blocks = None
+        self.block_influence_estimator = None
+
     def get_input_embeddings(self):
         return self.embed_tokens
 
@@ -856,6 +860,17 @@ class LlamaModel(LlamaPreTrainedModel):
             block_start_idx = block_idx * 2
             layer.add_layer_influence_estimator(infl_est, block_start_idx)
         print(f"Added layer influence estimator to the model: {infl_est}")
+
+    def select_blocks(self, block_list: List[int], verbose: bool = True):
+        if block_list is not None:
+            assert all([0 <= x < len(self.layers) for x in block_list]), block_list
+        self.selected_blocks = block_list
+        if verbose:
+            print("Selected blocks:", self.selected_blocks)
+
+    def add_block_influence_estimator(self, infl_est: BlockInfluenceEstimator):
+        self.block_influence_estimator = infl_est
+        print(f"Added block influence estimator to the model: {self.block_influence_estimator}")
 
     # Copied from transformers.models.bart.modeling_bart.BartDecoder._prepare_decoder_attention_mask
     def _prepare_decoder_attention_mask(self, attention_mask, input_shape, inputs_embeds, past_key_values_length):
@@ -956,6 +971,15 @@ class LlamaModel(LlamaPreTrainedModel):
         next_decoder_cache = () if use_cache else None
 
         for idx, decoder_layer in enumerate(self.layers):
+            
+            if self.selected_blocks is not None:  # skip blocks that are not selected
+                if idx not in self.selected_blocks:
+                    if use_cache:
+                        next_decoder_cache += (None,)
+                    if output_attentions:
+                        all_self_attns += (None,)
+                    continue
+            
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
@@ -986,6 +1010,9 @@ class LlamaModel(LlamaPreTrainedModel):
                     use_cache=use_cache,
                 )
 
+            if self.block_influence_estimator is not None:  # update the stats
+                self.block_influence_estimator.update_block_stats(idx, hidden_states, layer_outputs[0])
+            
             # default LLaMa update
             hidden_states = layer_outputs[0]
 
@@ -1054,6 +1081,12 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
 
     def add_layer_influence_estimator(self, infl_est: BlockInfluenceEstimator):
         self.model.add_layer_influence_estimator(infl_est)
+
+    def select_blocks(self, block_list: List[int], verbose: bool = True):
+        self.model.select_blocks(block_list, verbose)
+
+    def add_block_influence_estimator(self, infl_est: BlockInfluenceEstimator):
+        self.model.add_block_influence_estimator(infl_est)
 
     @add_start_docstrings_to_model_forward(LLAMA_INPUTS_DOCSTRING)
     @replace_return_docstrings(output_type=CausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC)

@@ -89,40 +89,40 @@ def compute_log_probs(logits: torch.Tensor, target_ids: torch.Tensor) -> Tuple[n
 
 @torch.no_grad()
 def evaluate_model(model: torch.nn.Module, eval_loader: torch.utils.data.DataLoader, device: torch.device, split_name: str):
-    """
-    Evaluate the model on the given dataset.
-    """
     model.eval()
-    avg_sequence_perplexity, avg_loss, num_ex = 0., 0., 0
-
+    avg_sequence_perplexity = 0.
+    avg_loss = 0.
+    num_ex = 0
+ 
     for batch in tqdm(eval_loader):
         tokenized_input = batch["input_ids"].to(device)
 
-        # Forward pass through the model
+        # Forward prop through the model (will also populate the loss, but one extra logit)
         outputs = model(tokenized_input, labels=tokenized_input)
 
-        lm_logits = outputs.logits[:, :-1, :]
-        target_ids = tokenized_input[:, 1:]
-        perplexity, _ = compute_log_probs(lm_logits, target_ids)
+        # Compute metrics on top of LM logits
+        lm_logits = outputs.logits[:, :-1, :]  # BTD format (discard the final logit)
+        target_ids = tokenized_input[:, 1:]  # input ids strided by one
+        assert len(lm_logits.shape) == 3, lm_logits.shape
+        assert len(target_ids.shape) == 2, target_ids.shape
+        assert lm_logits.shape[1] == target_ids.shape[1], f"{lm_logits.shape} != {target_ids.shape}"
+        perplexity, log_prob = compute_log_probs(lm_logits, target_ids)
 
         avg_sequence_perplexity += float(perplexity.sum())
         avg_loss += float(outputs.loss)
         num_ex += len(tokenized_input)
-        
-    # Aggregate stats across all processes
+
+    # Collect the stats from all processes
     avg_sequence_perplexity = float(reduce_tensor(torch.tensor(avg_sequence_perplexity).to(device)))
     avg_loss = float(reduce_tensor(torch.tensor(avg_loss).to(device)))
     num_ex = int(reduce_tensor(torch.tensor(num_ex).to(device)))
 
-    avg_sequence_perplexity /= num_ex
-    avg_loss /= num_ex
-
+    avg_sequence_perplexity = avg_sequence_perplexity / num_ex
+    avg_loss = avg_loss / num_ex
     output_dict = {"split": split_name, "num_ex": num_ex, "avg_loss": avg_loss, "avg_seq_perplexity": avg_sequence_perplexity}
     print(json.dumps(output_dict))
-
-    if split_name and wandb.run:
+    if split_name is not None and wandb.run is not None:
         wandb.log({f"eval_{split_name}": {"num_ex": num_ex, "avg_loss": avg_loss, "avg_seq_perplexity": avg_sequence_perplexity}})
-
     return avg_loss, avg_sequence_perplexity
 
 
@@ -132,6 +132,7 @@ def main(args):
     """
     init_distributed_env(args)
 
+    generator = None
     # Set random seed if provided
     if args.seed is not None:
         torch.manual_seed(args.seed)
@@ -139,6 +140,10 @@ def main(args):
         np.random.seed(seed=args.seed)
         random.seed(args.seed)
         print(f"Setting process seed: {args.seed}")
+
+        # Generator to seed dataloaders
+        generator = torch.Generator()
+        generator.manual_seed(args.seed)
 
     # Dataset and directory setup
     dataset_dir = f"{args.dataset}_model_{args.model_name}_seq_len_{args.sequence_length}_subsample_{args.subsample_size}_comb_docs"
@@ -152,21 +157,19 @@ def main(args):
         print("Initializing wandb...")
         wandb.init(project=args.wandb_project, name=args.wandb_run_name, config=args, resume=False)
     
-    # Process the dataset if necessary
     if is_main_proc() and not NLPDataset.is_dataset_processed(args.dataset_output_dir):
         tokenizer = load_model(args, only_tokenizer=True)
         dataset = NLPDataset(args.dataset, tokenizer, max_length=args.sequence_length,
                              combine_documents=True, subsample_size=args.subsample_size)
         dataset.save_datasets(args.dataset_output_dir)
-
-    # Wait for other processes to sync
-    wait_for_other_procs()
+    wait_for_other_procs()  # wait for the main process to write the dataset
 
     # Load dataset and model
     dataset = NLPDataset.load_dataset(args.dataset_output_dir)
 
     train_dataset = dataset["train"]
     test_dataset = dataset["test"]
+
     model, tokenizer = load_model(args, pretrained=True)
 
     # Move model to device
@@ -174,8 +177,8 @@ def main(args):
     model = model.to(device)
 
     # Set up dataloaders
-    train_loader = get_dataloader(train_dataset, args.batch_size, args.num_workers)
-    eval_loader = get_dataloader(test_dataset, args.test_batch_size, args.num_workers)
+    train_loader = get_dataloader(train_dataset, args.batch_size, args.num_workers, drop_last=True, generator=generator)
+    eval_loader = get_dataloader(test_dataset, 1, args.num_workers, generator=generator)
 
     # Load MMLU dataset for evaluation
     mmlu_dataset = MMLUDataset(tokenizer, args.model_name)
@@ -211,29 +214,38 @@ def main(args):
         layer_influence_list = [("cosine", cosine_layer_influences)]
 
 
-    # Layer pruning according to layer importance
-    layer_importances = [(cosine_distance, idx) for idx, cosine_distance in enumerate(cosine_layer_influences)]
-    layer_importances.sort(key=lambda x: x[0], reverse=True)
-    layers_to_keep = layer_importances[:int(total_layers * (1 - args.sparsity_ratio))]
-    layers_to_keep = [idx for _, idx in layers_to_keep]
-    layers_to_prune = layer_importances[int(total_layers * (1 - args.sparsity_ratio)):]
-    layers_to_prune = [idx for _, idx in layers_to_prune]
+    print("Using layer influence method: cosine distance")
+    print("Layer influence values:", cosine_layer_influences)
+    sorted_layers = np.argsort(cosine_layer_influences)[::-1]  # Descending order
+    if args.pruning_scheme != "both":
+        print("Selected pruning scheme:", args.pruning_scheme)
+        if args.pruning_scheme == "mhsa":
+            print("Only keeping even layers for removal...")
+            sorted_layers = [int(x) for x in sorted_layers if x % 2 == 0]  # MHSA layers are even
+        else:
+            assert args.pruning_scheme == "mlp", args.pruning_scheme
+            print("Only keeping odd layers for removal...")
+            sorted_layers = [int(x) for x in sorted_layers if x % 2 == 1]  # MLP layers are odd
+    print("Sorted layer list:", sorted_layers)
+
+    layers_prune = int(total_layers * args.sparsity_ratio)
+    assert len(sorted_layers)-layers_prune > 0, f"Pruning ratio too high: {args.sparsity_ratio}"
+    layers_to_keep = sorted_layers[:len(sorted_layers)-layers_prune]
+    layers_to_prune = sorted_layers[len(sorted_layers)-layers_prune:]
     print(f"Layers to keep: {layers_to_keep}")
 
     model.select_layers(layers_to_keep)  # use the selected layers
 
-
     # Wikitext perplexity evaluation
     wikitext_perplexity = eval_ppl(args, model, tokenizer, device)
     print(f"wikitext perplexity {wikitext_perplexity}")
-
 
     # MMLU Eval
     _, _, weighted_acc = evaluate_mmlu(model, tokenizer, mmlu_loader, device, f"cosine_influence_sparsity_{args.sparsity_ratio}")
     _, avg_perplexity = evaluate_model(model, eval_loader, device, f"cosine_influence_sparsity_{args.sparsity_ratio}")
 
     # Compute FLOPs
-    flops, macs, params = calculate_flops(model=model.to(device), input_shape=(1, 512), transformer_tokenizer=tokenizer)
+    flops, macs, _ = calculate_flops(model=model.to(device), input_shape=(1, 512), transformer_tokenizer=tokenizer)
 
     # Save results
     save_path = os.path.join(args.save_path, f'{args.pruning_scheme}_{args.model_name}{args.model_size}_sparse{args.sparsity_ratio}_{args.dataset}_samplesize{args.subsample_size}')
