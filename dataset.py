@@ -39,15 +39,15 @@ class NLPDataset(torch.utils.data.Dataset):
 
         subsample_dataset = True  # Subsample in this case due to large dataset size
         if dataset_name == "pg19":
-            dataset = load_dataset("pg19", trust_remote_code=True)
+            dataset = load_dataset("pg19", trust_remote_code=True)#, cache_dir='/home/aamer/cache')
             subsample_dataset = False  # dataset small enough
         elif dataset_name == "c4":
             # Load the en-noblocklist subset of C4 (https://huggingface.co/datasets/c4)
-            dataset = load_dataset("c4", "en.noblocklist", trust_remote_code=True)
+            dataset = load_dataset("allenai/c4", "en.noblocklist", trust_remote_code=True)#, cache_dir='/home/aamer/cache')
         elif dataset_name == "openwebtext":
-            dataset = load_dataset("openwebtext", trust_remote_code=True)
+            dataset = load_dataset("openwebtext", trust_remote_code=True)#, cache_dir='/home/aamer/cache')
         elif dataset_name == "slimpajama":
-            dataset = load_dataset("cerebras/SlimPajama-627B", trust_remote_code=True)
+            dataset = load_dataset("cerebras/SlimPajama-627B", trust_remote_code=True, cache_dir='/home/aamer/cache')
         elif dataset_name == "cc_news":
             dataset = load_dataset("cc_news", trust_remote_code=True)
             subsample_dataset = False  # dataset small enough

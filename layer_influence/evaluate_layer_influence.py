@@ -298,7 +298,7 @@ if __name__ == "__main__":
     parser.add_argument('--pruning_scheme', default='both', choices=['mhsa', 'mlp', 'both'])
     parser.add_argument('--use_block_influence', action='store_true', default=False)
     parser.add_argument('--sparsity_ratio', type=float, default=0.25)
-    parser.add_argument('--save_path', type=str, default='/home/aamer/repos/llm_depth_pruning/logs')
+    parser.add_argument('--save_path', type=str, default='/home/aamer/repos/wanda/logs')
 
     args = parser.parse_args()
 

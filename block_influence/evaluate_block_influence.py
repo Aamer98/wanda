@@ -18,12 +18,14 @@ from transformers import AutoTokenizer, AutoConfig
 import sys
 sys.path.append('.')
 from llama_model import LlamaForCausalLM
+from qwen_layer_influence import Qwen2ForCausalLM
 from mistral_model import MistralForCausalLM
 from dataset import NLPDataset, get_dataloader
 from train_utils import get_num_model_params
 from dist_utils import init_distributed_env, is_main_proc, wait_for_other_procs, reduce_tensor
 from block_influence import BlockInfluenceEstimator
 from evals.dist_mmlu import MMLUDataset, evaluate_mmlu
+
 
 
 def load_model(args, only_tokenizer=False, pretrained=False):
@@ -38,6 +40,8 @@ def load_model(args, only_tokenizer=False, pretrained=False):
             model_name = f"mistralai/Mistral-{args.model_size.upper()}-Instruct-v0.2"
         else:
             model_name = f"mistralai/Mistral-{args.model_size.upper()}-v0.1"
+    elif args.model_name == "qwen2":
+        model_name = f"Qwen/Qwen2.5-{args.model_size.upper()}-chat-hf" if args.use_instruct_model else f"Qwen/Qwen2.5-{args.model_size.upper()}"
     else:
         raise RuntimeError(f"Unsupported model: {args.model_name}")
     print("!! Loading model:", model_name)
@@ -60,6 +64,8 @@ def load_model(args, only_tokenizer=False, pretrained=False):
             model = LlamaForCausalLM(config).to(kwargs["torch_dtype"])
         else:
             model = LlamaForCausalLM.from_pretrained(model_name, **kwargs)
+    elif args.model_name == "qwen2":
+        model = Qwen2ForCausalLM(config).to(kwargs["torch_dtype"]) if not pretrained else Qwen2ForCausalLM.from_pretrained(model_name)
     elif args.model_name == "mistral":
         if not pretrained:
             model = MistralForCausalLM(config).to(kwargs["torch_dtype"])
@@ -67,6 +73,9 @@ def load_model(args, only_tokenizer=False, pretrained=False):
             model = MistralForCausalLM.from_pretrained(model_name, **kwargs)
     else:
         raise RuntimeError(f"Unsupported model: {args.model_name}")
+
+    model.seqlen = min(2048, model.config.max_position_embeddings)
+
     return model, tokenizer
 
 
