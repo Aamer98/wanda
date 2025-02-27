@@ -12,10 +12,11 @@ import csv
 from tqdm import tqdm
 from typing import Tuple
 
-from transformers import AutoTokenizer, AutoConfig
+from transformers import AutoTokenizer, AutoConfig, BitsAndBytesConfig
 
 from llama_layer_influence import LlamaForCausalLM
 from qwen_layer_influence import Qwen2ForCausalLM
+from llama3_layer_influence import LlamaForCausalLM as LlamaForCausalLM3
 # from mistral_layer_influence import MistralForCausalLM
 
 import sys
@@ -29,7 +30,6 @@ from utils import layer_importance_plot
 from lib.eval import eval_ppl, eval_zero_shot
 from calflops import calculate_flops
 
-
 def load_model(args, only_tokenizer=False, pretrained=False):
     """
     Load the model and tokenizer based on the specified arguments.
@@ -39,6 +39,10 @@ def load_model(args, only_tokenizer=False, pretrained=False):
         model_name = f"meta-llama/Llama-2-{args.model_size.lower()}-chat-hf" if args.use_instruct_model else f"meta-llama/Llama-2-{args.model_size.lower()}-hf"
     elif args.model_name == "mistral":
         model_name = f"mistralai/Mistral-{args.model_size.upper()}-Instruct-v0.2" if args.use_instruct_model else f"mistralai/Mistral-{args.model_size.upper()}-v0.1"
+    elif args.model_name == "llama-3.2":
+        model_name = f"meta-llama/Llama-3.2-{args.model_size.upper()}-chat-hf" if args.use_instruct_model else f"meta-llama/Llama-3.2-{args.model_size.upper()}"
+    elif args.model_name == "llama-3.1":
+        model_name = f"meta-llama/Llama-3.1-{args.model_size.upper()}-chat-hf" if args.use_instruct_model else f"meta-llama/Llama-3.1-{args.model_size.upper()}"
     elif args.model_name == "qwen2":
         model_name = f"Qwen/Qwen2.5-{args.model_size.upper()}-chat-hf" if args.use_instruct_model else f"Qwen/Qwen2.5-{args.model_size.upper()}"
     else:
@@ -56,6 +60,8 @@ def load_model(args, only_tokenizer=False, pretrained=False):
     print("Model config:", config)
 
     kwargs = dict(torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2")
+    kwargs_l3 = dict(torch_dtype=torch.bfloat16)
+    quantization_config = BitsAndBytesConfig(load_in_4bit=True)
     print("Model precision:", kwargs["torch_dtype"])
 
     # Load the model itself
@@ -63,13 +69,17 @@ def load_model(args, only_tokenizer=False, pretrained=False):
         model = LlamaForCausalLM(config).to(kwargs["torch_dtype"]) if not pretrained else LlamaForCausalLM.from_pretrained(model_name, **kwargs)
     elif args.model_name == "qwen2":
         model = Qwen2ForCausalLM(config).to(kwargs["torch_dtype"]) if not pretrained else Qwen2ForCausalLM.from_pretrained(model_name)
+    elif args.model_name == "llama-3.2" or args.model_name == "llama-3.1":
+        model = LlamaForCausalLM3(config).to(kwargs["torch_dtype"]) if not pretrained else LlamaForCausalLM3.from_pretrained(model_name, quantization_config=quantization_config, torch_dtype="auto")
     elif args.model_name == "mistral":
         raise NotImplementedError("Mistral model loading is not implemented in this script.")  # Uncomment and complete if necessary
     else:
         raise RuntimeError(f"Unsupported model: {args.model_name}")
 
     model.seqlen = min(2048, model.config.max_position_embeddings)
-    
+
+    breakpoint()
+
     return model, tokenizer
 
 
@@ -285,8 +295,8 @@ if __name__ == "__main__":
     # Argument parser setup
     parser = argparse.ArgumentParser(description='LLM Layer Influence Evaluator')
     parser.add_argument('-d', '--dataset', default='wikitext-2', choices=supported_datasets)
-    parser.add_argument('-m', '--model_name', default='llama-2', choices=['llama-2', 'mistral', 'qwen2'])
-    parser.add_argument('-s', '--model_size', default='7b', choices=['7b', '3b', '1.5b', '0.5b'])
+    parser.add_argument('-m', '--model_name', default='llama-2', choices=['llama-2', 'mistral', 'qwen2', 'llama-3.1', 'llama-3.2', 'llama-3'])
+    parser.add_argument('-s', '--model_size', default='7b', choices=['7b', '3b', '1.5b', '0.5b', '1b'])
     parser.add_argument('--use_instruct_model', action='store_true', default=False)
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--test_batch_size', type=int, default=None)
@@ -298,7 +308,7 @@ if __name__ == "__main__":
     parser.add_argument('--pruning_scheme', default='both', choices=['mhsa', 'mlp', 'both'])
     parser.add_argument('--use_block_influence', action='store_true', default=False)
     parser.add_argument('--sparsity_ratio', type=float, default=0.25)
-    parser.add_argument('--save_path', type=str, default='/home/aamer/repos/wanda/logs')
+    parser.add_argument('--save_path', type=str, default='/home/aamer/repos/wanda/logs/layer_influence')
 
     args = parser.parse_args()
 
